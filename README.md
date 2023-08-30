@@ -1,16 +1,31 @@
 `acpi-system`
 =============
 
-The library provides a way to manage ACPI hardware 
+The library provides a way to manage ACPI hardware
 for operating systems written in Rust. It is designed
-to be simple to integrate and is based on 
+to be simple to integrate and is based on
 [`acpi`](https://github.com/rust-osdev/acpi) crates.
 
-The crate has not yet been published to crates.io and is 
+Please note that the crate only supports x86-based systems for now.
+
+The crate has not yet been published to crates.io and is
 in its early development stage.
 
-See the "Issues" section of this repo for any major 
+See the "Issues" section of this repo for any major
 problems before using this crate.
+
+Supported features
+------------------
+
+* Initializing the overall ACPI management
+* Entering S5 sleep state (power down)
+* Handling fixed events (power button, sleep button, etc)
+
+Supported hardware
+------------------
+
+* QEMU (full)
+* Lenovo ThinkPad T430 (DSDT only, SSDT support pending due to missing `acpi` functionality)
 
 Usage example
 -------------
@@ -55,6 +70,6 @@ As the project has only been started recently, any contributions are welcome:
 * Write code for missing features
 * Open issues in this repo
 
-ACPICA and the ACPI specification were used as main sources of 
+ACPICA and the ACPI specification were used as main sources of
 information for this project, so if you decide to contribute,
 you may find them very useful.
