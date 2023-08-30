@@ -4,9 +4,7 @@ use aml::{value::AmlType, AmlError, AmlName, AmlValue};
 
 use crate::{
     hardware::{AcpiBitRangeRegister, AcpiBitRegister, AcpiRegister},
-    AcpiSystem,
-    AcpiSystemError,
-    Handler,
+    AcpiSystem, AcpiSystemError, Handler,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,14 +34,19 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
 
         let AmlValue::Package(elements) = &info else {
             // TODO make this an error
-            panic!("{} did not evaluate to Package AML type", SLEEP_STATE_NAMES[state as usize]);
+            panic!(
+                "{} did not evaluate to Package AML type",
+                SLEEP_STATE_NAMES[state as usize]
+            );
         };
 
         match elements.len() {
             0 => todo!(),
             1 => todo!(),
             _ => {
-                if elements[0].type_of() != AmlType::Integer || elements[1].type_of() != AmlType::Integer {
+                if elements[0].type_of() != AmlType::Integer
+                    || elements[1].type_of() != AmlType::Integer
+                {
                     panic!("Sleep package does not contain integers");
                 }
 
@@ -95,7 +98,11 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         Ok(sleep_types)
     }
 
-    unsafe fn acpi_hw_legacy_sleep(&mut self, sleep_type_a: u8, sleep_type_b: u8) -> Result<(), AcpiSystemError> {
+    unsafe fn acpi_hw_legacy_sleep(
+        &mut self,
+        sleep_type_a: u8,
+        sleep_type_b: u8,
+    ) -> Result<(), AcpiSystemError> {
         let sleep_type_reg = &AcpiBitRangeRegister::SLEEP_TYPE;
         let sleep_enable_reg = &AcpiBitRegister::SLEEP_ENABLE;
         // let sleep_type_reg_info = &data::BITREG_INFO[data::BITREG_SLEEP_TYPE];

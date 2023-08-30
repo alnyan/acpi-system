@@ -57,7 +57,13 @@ fn my_acpi_init() {
 
 	// At this point, AcpiSystem is usable and we can do things like
 	// powering down the system or binding events:
-	system.enable_fixed_event(&FixedEvent::POWER_BUTTON).unwrap();
+	system.enable_fixed_event(
+        &FixedEvent::POWER_BUTTON,
+        Box::new(|_| {
+            log::info!("Power button was pressed!");
+            EventAction::EnterSleepState(AcpiSleepState::S5)
+        })
+    ).unwrap();
 }
 ```
 

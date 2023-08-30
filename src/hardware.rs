@@ -23,7 +23,6 @@ pub(crate) struct AcpiBitRegister {
 }
 
 pub(crate) struct AcpiBitRangeRegister {
-    parent: AcpiRegister,
     range: Range<usize>,
 }
 
@@ -43,10 +42,7 @@ impl AcpiBitRegister {
 }
 
 impl AcpiBitRangeRegister {
-    pub(crate) const SLEEP_TYPE: Self = Self {
-        parent: AcpiRegister::Pm1Control,
-        range: 10..13,
-    };
+    pub(crate) const SLEEP_TYPE: Self = Self { range: 10..13 };
 }
 
 impl AcpiBitRegister {
@@ -81,21 +77,6 @@ impl AcpiBitRegister {
 }
 
 impl AcpiBitRangeRegister {
-    pub fn set<'a, H: Handler + AcpiHandler + 'a>(
-        &self,
-        context: &mut AcpiSystem<'a, H>,
-        value: u32,
-    ) -> Result<(), AcpiSystemError> {
-        todo!()
-    }
-
-    pub fn get<'a, H: Handler + AcpiHandler + 'a>(
-        &self,
-        context: &AcpiSystem<'a, H>,
-    ) -> Result<u32, AcpiSystemError> {
-        todo!()
-    }
-
     #[inline]
     pub fn set_raw(&self, mut raw: u32, value: u32) -> u32 {
         raw.set_bits(self.range.clone(), value);
@@ -103,7 +84,7 @@ impl AcpiBitRangeRegister {
     }
 }
 
-fn access_bit_width(register: &GenericAddress, address: u64, mut maximum_width: u8) -> u8 {
+fn access_bit_width(register: &GenericAddress, _address: u64, mut maximum_width: u8) -> u8 {
     // TODO check align
     let access_bit_width = if register.bit_offset == 0
         && register.bit_width != 0

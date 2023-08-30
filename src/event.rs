@@ -3,13 +3,11 @@ use acpi::{
     AcpiHandler,
 };
 use alloc::{vec, vec::Vec};
+use enum_map::Enum;
 
 use crate::{
     hardware::{AcpiBitRegister, AcpiRegister},
-    AcpiSleepState,
-    AcpiSystem,
-    AcpiSystemError,
-    Handler,
+    AcpiSleepState, AcpiSystem, AcpiSystemError, Handler,
 };
 
 pub const GPE_REGISTER_WIDTH: usize = 8;
@@ -34,40 +32,69 @@ pub(crate) struct GpeBlock {
     gpe_count: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Enum)]
+pub(crate) enum EventHandlerId {
+    Timer,
+    GlobalLock,
+    PowerButton,
+    SleepButton,
+    Rtc,
+}
+
 pub struct FixedEvent {
     pub(crate) name: &'static str,
     pub(crate) enable_register: AcpiBitRegister,
     pub(crate) status_register: AcpiBitRegister,
+    pub(crate) handler_id: EventHandlerId,
+}
+
+// TODO event handlers cannot borrow AcpiSystem mutably, so some kind of "return token" has to be
+//      used instead
+#[derive(Clone, Copy, Debug, Default)]
+pub enum EventAction {
+    #[default]
+    Nothing,
+    EnterSleepState(AcpiSleepState),
 }
 
 impl FixedEvent {
-    const LIST: &[&'static Self] =
-        &[&Self::TIMER, &Self::GLOBAL_LOCK, &Self::POWER_BUTTON, &Self::SLEEP_BUTTON, &Self::RTC];
+    const LIST: &[&'static Self] = &[
+        &Self::TIMER,
+        &Self::GLOBAL_LOCK,
+        &Self::POWER_BUTTON,
+        &Self::SLEEP_BUTTON,
+        &Self::RTC,
+    ];
 
     pub const TIMER: Self = Self {
         name: "Timer",
         enable_register: AcpiBitRegister::new(AcpiRegister::Pm1Enable, 0),
         status_register: AcpiBitRegister::new(AcpiRegister::Pm1Status, 0),
+        handler_id: EventHandlerId::Timer,
     };
     pub const GLOBAL_LOCK: Self = Self {
         name: "Global Lock",
         enable_register: AcpiBitRegister::new(AcpiRegister::Pm1Enable, 5),
         status_register: AcpiBitRegister::new(AcpiRegister::Pm1Status, 5),
+        handler_id: EventHandlerId::GlobalLock,
     };
     pub const POWER_BUTTON: Self = Self {
         name: "Power Button",
         enable_register: AcpiBitRegister::new(AcpiRegister::Pm1Enable, 8),
         status_register: AcpiBitRegister::new(AcpiRegister::Pm1Status, 8),
+        handler_id: EventHandlerId::PowerButton,
     };
     pub const SLEEP_BUTTON: Self = Self {
         name: "Sleep Button",
         enable_register: AcpiBitRegister::new(AcpiRegister::Pm1Enable, 9),
         status_register: AcpiBitRegister::new(AcpiRegister::Pm1Status, 9),
+        handler_id: EventHandlerId::SleepButton,
     };
     pub const RTC: Self = Self {
         name: "RTC",
         enable_register: AcpiBitRegister::new(AcpiRegister::Pm1Enable, 10),
         status_register: AcpiBitRegister::new(AcpiRegister::Pm1Status, 10),
+        handler_id: EventHandlerId::Rtc,
     };
 }
 
@@ -109,10 +136,11 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         log::info!("GPE block #{}", block_base_number);
         log::info!("Block address: {:#x?}", block_address);
 
-        // AcpiEvCreateGpeInfoBlocks()
         let mut register_info = vec![];
         let mut event_info = vec![];
 
+        // GPEs are grouped in registers, each represented by one bit.
+        // GPEx_STS register array is followed by GPEx_EN register array.
         let gpe_count = register_count * GPE_REGISTER_WIDTH;
 
         for i in 0..register_count {
@@ -137,7 +165,10 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             for j in 0..GPE_REGISTER_WIDTH {
                 let gpe_number = base_gpe_number + j as u16;
 
-                event_info.push(GpeEventInfo { gpe_number, register_index: i });
+                event_info.push(GpeEventInfo {
+                    gpe_number,
+                    register_index: i,
+                });
             }
 
             // Disable all GPEs within this register
@@ -146,17 +177,18 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             // Clear any pending GPEs within this register
             Self::write_address(status_register, 0xFF)?;
 
-            register_info.push(GpeRegisterInfo { base_gpe_number, status_register, enable_register });
+            register_info.push(GpeRegisterInfo {
+                base_gpe_number,
+                status_register,
+                enable_register,
+            });
         }
 
-        let block = GpeBlock { register_info, event_info, gpe_count };
-
-        // TODO
-        // AcpiEvInstallGpeBlock()
-        //      GpeXruptBlock = AcpiEvGetGpeXruptBlock(InterruptNumber, ...)
-        //      ... Install the new block at the end of block list
-
-        Ok(block)
+        Ok(GpeBlock {
+            register_info,
+            event_info,
+            gpe_count,
+        })
     }
 
     fn initialize_gpes(&mut self) -> Result<(), AcpiSystemError> {
@@ -170,7 +202,8 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             let gpe_number_max = (reg_count * GPE_REGISTER_WIDTH) - 1;
 
             // AcpiEvCreateGpeBlock
-            let block = self.initialize_gpe_block(gpe0, reg_count, 0, self.fadt.sci_interrupt as u32)?;
+            let block =
+                self.initialize_gpe_block(gpe0, reg_count, 0, self.fadt.sci_interrupt as u32)?;
             self.gpe0_block.replace(block);
 
             gpe_number_max
@@ -191,16 +224,15 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         let fixed_en = self.read_register(AcpiRegister::Pm1Enable)?;
 
         for &event in FixedEvent::LIST {
-            if event.enable_register.get_from_raw(fixed_en) && event.status_register.get_from_raw(fixed_sts) {
-                log::info!("Got event: {:?}", event.name);
+            if event.enable_register.get_from_raw(fixed_en)
+                && event.status_register.get_from_raw(fixed_sts)
+            {
+                log::trace!("Got event: {:?}", event.name);
                 // Clear the event by writing 1 into its status bit
                 event.status_register.set(self, true).ok();
 
-                // TODO execute the event's bound handler
-                if event.name == "Power Button" {
-                    unsafe {
-                        self.enter_sleep_state(AcpiSleepState::S5).unwrap();
-                    }
+                if let Some(handler) = &self.event_handlers[event.handler_id] {
+                    self.handle_event_action(handler(self)).ok();
                 }
             }
         }

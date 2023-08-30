@@ -1,3 +1,4 @@
+#![feature(const_for)]
 #![no_std]
 
 extern crate alloc;
@@ -8,7 +9,9 @@ use acpi::{
 };
 use alloc::{boxed::Box, vec};
 use aml::{AmlContext, AmlError, AmlName, AmlValue};
-use event::GpeBlock;
+use enum_map::EnumMap;
+
+use event::{EventHandlerId, GpeBlock};
 
 mod error;
 mod event;
@@ -16,7 +19,7 @@ mod hardware;
 mod sleep;
 
 pub use error::AcpiSystemError;
-pub use event::FixedEvent;
+pub use event::{EventAction, FixedEvent};
 pub use sleep::AcpiSleepState;
 
 const PATH_PIC: &str = "\\_PIC";
@@ -60,6 +63,7 @@ pub struct AcpiSystem<'a, H: Handler + AcpiHandler + 'a> {
     gpe0_block: Option<GpeBlock>,
     #[allow(dead_code)]
     gpe1_block: Option<GpeBlock>,
+    event_handlers: EnumMap<EventHandlerId, Option<Box<dyn Fn(&Self) -> EventAction>>>,
 }
 
 impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
@@ -79,6 +83,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             pm1_registers,
             gpe0_block: None,
             gpe1_block: None,
+            event_handlers: EnumMap::default(),
         })
     }
 
@@ -124,8 +129,13 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         Ok(())
     }
 
-    pub fn enable_fixed_event(&mut self, event: &FixedEvent) -> Result<(), AcpiSystemError> {
+    pub fn enable_fixed_event(
+        &mut self,
+        event: &FixedEvent,
+        handler: Box<dyn Fn(&Self) -> EventAction>,
+    ) -> Result<(), AcpiSystemError> {
         log::info!("Enable ACPI event: {}", event.name);
+        self.event_handlers[event.handler_id].replace(handler);
         event.enable_register.set(self, true)
     }
 
@@ -156,6 +166,16 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         match self.aml_context.invoke_method(&path, args) {
             Ok(_) | Err(AmlError::ValueDoesNotExist(_)) => Ok(()),
             Err(err) => Err(AcpiSystemError::AmlError(err)),
+        }
+    }
+
+    pub(crate) fn handle_event_action(
+        &mut self,
+        action: EventAction,
+    ) -> Result<(), AcpiSystemError> {
+        match action {
+            EventAction::Nothing => Ok(()),
+            EventAction::EnterSleepState(state) => unsafe { self.enter_sleep_state(state) },
         }
     }
 }

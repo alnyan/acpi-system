@@ -12,3 +12,4 @@ acpi = { git = "https://github.com/alnyan/acpi", branch = "acpi-system" }
 aml = { git = "https://github.com/alnyan/acpi", branch = "acpi-system" }
 log = "0.4.20"
 bit_field = "0.10"
+enum-map = "2.6.1"
