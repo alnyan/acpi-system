@@ -10,7 +10,6 @@ use alloc::{boxed::Box, vec};
 use aml::{AmlContext, AmlError, AmlName, AmlValue};
 use event::GpeBlock;
 
-mod data;
 mod error;
 mod event;
 mod hardware;
