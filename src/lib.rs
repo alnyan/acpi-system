@@ -3,10 +3,8 @@
 extern crate alloc;
 
 use acpi::{
-    fadt::{Fadt, FadtRegisters},
-    AcpiHandler,
-    AcpiTables,
-    PhysicalMapping,
+    fadt::{Fadt, Pm1Registers},
+    AcpiHandler, AcpiTables, PhysicalMapping,
 };
 use alloc::{boxed::Box, vec};
 use aml::{AmlContext, AmlError, AmlName, AmlValue};
@@ -55,9 +53,9 @@ pub struct AcpiSystem<'a, H: Handler + AcpiHandler + 'a> {
     tables: &'a AcpiTables<H>,
     aml_context: AmlContext,
 
-    // FADT and its PMx registers
+    // FADT and its PM1x registers
     fadt: PhysicalMapping<H, Fadt>,
-    fadt_registers: FadtRegisters,
+    pm1_registers: Pm1Registers,
 
     // Event handling
     gpe0_block: Option<GpeBlock>,
@@ -66,16 +64,29 @@ pub struct AcpiSystem<'a, H: Handler + AcpiHandler + 'a> {
 }
 
 impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
-    pub fn new(tables: &'a AcpiTables<H>, aml_handler: Box<dyn aml::Handler>) -> Result<Self, AcpiSystemError> {
+    pub fn new(
+        tables: &'a AcpiTables<H>,
+        aml_handler: Box<dyn aml::Handler>,
+    ) -> Result<Self, AcpiSystemError> {
         let fadt = tables.find_table::<Fadt>()?;
-        let fadt_registers = fadt.pm_registers()?;
+        let pm1_registers = fadt.pm1_registers()?;
 
         let aml_context = AmlContext::new(aml_handler, aml::DebugVerbosity::None);
 
-        Ok(Self { tables, aml_context, fadt, fadt_registers, gpe0_block: None, gpe1_block: None })
+        Ok(Self {
+            tables,
+            aml_context,
+            fadt,
+            pm1_registers,
+            gpe0_block: None,
+            gpe1_block: None,
+        })
     }
 
-    pub fn initialize(&mut self, interrupt_method: AcpiInterruptMethod) -> Result<(), AcpiSystemError> {
+    pub fn initialize(
+        &mut self,
+        interrupt_method: AcpiInterruptMethod,
+    ) -> Result<(), AcpiSystemError> {
         // Enable hardware part of ACPI
         self.enable_acpi()?;
 
@@ -126,7 +137,10 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         // TODO handle GPEs
     }
 
-    pub unsafe fn enter_sleep_state(&mut self, state: AcpiSleepState) -> Result<(), AcpiSystemError> {
+    pub unsafe fn enter_sleep_state(
+        &mut self,
+        state: AcpiSleepState,
+    ) -> Result<(), AcpiSystemError> {
         log::info!("Entering sleep state: {:?}", state);
         let (sleep_type_a, sleep_type_b) = self.prepare_sleep_state(state)?;
         self.dispatch_sleep_command(sleep_type_a, sleep_type_b)

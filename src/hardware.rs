@@ -1,7 +1,7 @@
 use core::ops::Range;
 
 use acpi::{
-    address::{AddressSpace, GenericAddress},
+    address::{AccessSize, AddressSpace, GenericAddress},
     AcpiHandler,
 };
 use bit_field::BitField;
@@ -28,8 +28,14 @@ pub(crate) struct AcpiBitRangeRegister {
 }
 
 impl AcpiBitRegister {
-    pub(crate) const SCI_ENABLE: Self = Self { parent: AcpiRegister::Pm1Control, position: 0 };
-    pub(crate) const SLEEP_ENABLE: Self = Self { parent: AcpiRegister::Pm1Control, position: 13 };
+    pub(crate) const SCI_ENABLE: Self = Self {
+        parent: AcpiRegister::Pm1Control,
+        position: 0,
+    };
+    pub(crate) const SLEEP_ENABLE: Self = Self {
+        parent: AcpiRegister::Pm1Control,
+        position: 13,
+    };
 
     pub(crate) const fn new(parent: AcpiRegister, position: usize) -> Self {
         Self { parent, position }
@@ -37,7 +43,10 @@ impl AcpiBitRegister {
 }
 
 impl AcpiBitRangeRegister {
-    pub(crate) const SLEEP_TYPE: Self = Self { parent: AcpiRegister::Pm1Control, range: 10..13 };
+    pub(crate) const SLEEP_TYPE: Self = Self {
+        parent: AcpiRegister::Pm1Control,
+        range: 10..13,
+    };
 }
 
 impl AcpiBitRegister {
@@ -94,20 +103,44 @@ impl AcpiBitRangeRegister {
     }
 }
 
+fn access_bit_width(register: &GenericAddress, address: u64, mut maximum_width: u8) -> u8 {
+    // TODO check align
+    let access_bit_width = if register.bit_offset == 0
+        && register.bit_width != 0
+        && register.bit_width.is_power_of_two()
+    {
+        register.bit_width
+    } else if register.access_size != AccessSize::Undefined {
+        todo!()
+    } else {
+        todo!()
+    };
+
+    if register.address_space == AddressSpace::SystemIo {
+        maximum_width = 32;
+    }
+
+    core::cmp::min(access_bit_width, maximum_width)
+}
+
 impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
-    pub(crate) fn write_register(&mut self, register: AcpiRegister, value: u32) -> Result<(), AcpiSystemError> {
+    pub(crate) fn write_register(
+        &mut self,
+        register: AcpiRegister,
+        value: u32,
+    ) -> Result<(), AcpiSystemError> {
         match register {
             AcpiRegister::Pm1Status => {
                 let value = value & !PM1_STATUS_PRESERVED_BITS;
 
-                let pm1a = self.fadt_registers.x_pm1a_status;
-                let pm1b = self.fadt_registers.x_pm1b_status;
+                let pm1a = self.pm1_registers.x_pm1a_status;
+                let pm1b = self.pm1_registers.x_pm1b_status;
 
                 Self::write_register_pair(pm1a, pm1b, value)
             }
             AcpiRegister::Pm1Enable => {
-                let pm1a = self.fadt_registers.x_pm1a_enable;
-                let pm1b = self.fadt_registers.x_pm1b_enable;
+                let pm1a = self.pm1_registers.x_pm1a_enable;
+                let pm1b = self.pm1_registers.x_pm1b_enable;
 
                 Self::write_register_pair(pm1a, pm1b, value)
             }
@@ -121,14 +154,14 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
     pub(crate) fn read_register(&self, register: AcpiRegister) -> Result<u32, AcpiSystemError> {
         match register {
             AcpiRegister::Pm1Status => {
-                let pm1a = self.fadt_registers.x_pm1a_status;
-                let pm1b = self.fadt_registers.x_pm1b_status;
+                let pm1a = self.pm1_registers.x_pm1a_status;
+                let pm1b = self.pm1_registers.x_pm1b_status;
 
                 Self::read_register_pair(pm1a, pm1b)
             }
             AcpiRegister::Pm1Enable => {
-                let pm1a = self.fadt_registers.x_pm1a_enable;
-                let pm1b = self.fadt_registers.x_pm1b_enable;
+                let pm1a = self.pm1_registers.x_pm1a_enable;
+                let pm1b = self.pm1_registers.x_pm1b_enable;
 
                 Self::read_register_pair(pm1a, pm1b)
             }
@@ -143,7 +176,11 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
 
     // A different function is needed for Pm1Control because we don't just write two copies of the
     // same value into this pair. Each register receives its own value instead.
-    pub(crate) fn write_pm1_control(&mut self, reg_a_value: u32, reg_b_value: u32) -> Result<(), AcpiSystemError> {
+    pub(crate) fn write_pm1_control(
+        &mut self,
+        reg_a_value: u32,
+        reg_b_value: u32,
+    ) -> Result<(), AcpiSystemError> {
         let pm1a = self.fadt.pm1a_control_block()?;
         let pm1b = self.fadt.pm1b_control_block()?;
 
@@ -167,13 +204,24 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         Ok(())
     }
 
-    fn read_register_pair(reg_a: GenericAddress, reg_b: Option<GenericAddress>) -> Result<u32, AcpiSystemError> {
+    fn read_register_pair(
+        reg_a: GenericAddress,
+        reg_b: Option<GenericAddress>,
+    ) -> Result<u32, AcpiSystemError> {
         let value_a = Self::read_address(reg_a)? as u32;
-        let value_b = if let Some(reg_b) = reg_b { Self::read_address(reg_b)? as u32 } else { 0 };
+        let value_b = if let Some(reg_b) = reg_b {
+            Self::read_address(reg_b)? as u32
+        } else {
+            0
+        };
         Ok(value_a | value_b)
     }
 
-    fn read_address_space(space: AddressSpace, address: u64, width: usize) -> Result<u64, AcpiSystemError> {
+    fn read_address_space(
+        space: AddressSpace,
+        address: u64,
+        width: usize,
+    ) -> Result<u64, AcpiSystemError> {
         match space {
             AddressSpace::SystemMemory => match width {
                 8 => Ok(H::mem_read_u8(address) as _),
@@ -228,7 +276,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         // TODO ValidateRegister
         let mut value = 0;
         let address = reg.address;
-        let access_width = reg.access_bit_width(address, 64) as usize;
+        let access_width = access_bit_width(&reg, address, 64) as usize;
         let mut bit_width = (reg.bit_width + reg.bit_offset) as usize;
         let mut bit_offset = reg.bit_offset as usize;
         let mut index = 0;
@@ -259,7 +307,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
 
     pub(crate) fn write_address(reg: GenericAddress, value: u64) -> Result<(), AcpiSystemError> {
         let address = reg.address;
-        let access_width = reg.access_bit_width(address, 64) as usize;
+        let access_width = access_bit_width(&reg, address, 64) as usize;
         let mut bit_width = (reg.bit_width + reg.bit_offset) as usize;
         let mut bit_offset = reg.bit_offset as usize;
         let mut index = 0;
