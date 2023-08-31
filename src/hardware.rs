@@ -88,17 +88,33 @@ impl AcpiBitRangeRegister {
     }
 }
 
-fn access_bit_width(register: &GenericAddress, _address: u64, mut maximum_width: u8) -> u8 {
-    // TODO check align
+fn access_bit_width(register: &GenericAddress, address: u64, mut maximum_width: u8) -> u8 {
     let access_bit_width = if register.bit_offset == 0
         && register.bit_width != 0
         && register.bit_width.is_power_of_two()
+        && register.bit_width % 8 == 0
     {
         register.bit_width
     } else if register.access_size != AccessSize::Undefined {
-        todo!()
+        match register.access_size {
+            AccessSize::ByteAccess => 8,
+            AccessSize::WordAccess => 16,
+            AccessSize::DWordAccess => 32,
+            AccessSize::QWordAccess => 64,
+            _ => unimplemented!(),
+        }
     } else {
-        todo!()
+        let mut width = (register.bit_offset + register.bit_width).next_power_of_two();
+
+        if width < 8 {
+            width = 8;
+        } else {
+            while address % width as u64 != 0 {
+                width >>= 1;
+            }
+        }
+
+        width
     };
 
     if register.address_space == AddressSpace::SystemIo {

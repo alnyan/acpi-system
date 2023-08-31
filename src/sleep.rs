@@ -1,6 +1,6 @@
 use acpi::AcpiHandler;
 use alloc::vec;
-use aml::{value::AmlType, AmlError, AmlName, AmlValue};
+use aml::{AmlError, AmlName, AmlValue};
 
 use crate::{
     hardware::{AcpiBitRangeRegister, AcpiBitRegister, AcpiRegister},
