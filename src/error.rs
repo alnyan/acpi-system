@@ -6,6 +6,9 @@ pub enum AcpiSystemError {
     AcpiError(AcpiError),
     AmlError(AmlError),
 
+    EnableTimeout,
+    ModeTransitionNotSupported,
+
     InvalidSleepValues(u8, u8),
     InvalidSleepMethod(&'static str),
     MissingSleepMethod(&'static str),

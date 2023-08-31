@@ -1,4 +1,4 @@
-use core::ops::Range;
+use core::{ops::Range, time::Duration};
 
 use acpi::{
     address::{AccessSize, AddressSpace, GenericAddress},
@@ -336,9 +336,11 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
     }
 
     pub(crate) fn set_acpi_mode(&mut self, acpi: bool) -> Result<(), AcpiSystemError> {
+        const TIMEOUT: Duration = Duration::from_secs(1);
+
         if self.fadt.acpi_enable == 0 && self.fadt.acpi_disable == 0 {
             log::error!("No ACPI mode transition is supported in this system");
-            todo!();
+            return Err(AcpiSystemError::ModeTransitionNotSupported);
         }
 
         if acpi {
@@ -352,7 +354,6 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             todo!("Switch to non-ACPI is not supported yet")
         }
 
-        // TODO use OS stall function
         let mut attempts = 3000;
         while attempts != 0 {
             let acpi_enabled = self.is_acpi_enabled().unwrap_or(false);
@@ -361,14 +362,12 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
                 return Ok(());
             }
 
-            for _ in 0..1000000 {
-                core::hint::spin_loop();
-            }
+            H::stall(TIMEOUT);
 
             attempts -= 1;
         }
 
-        todo!()
+        Err(AcpiSystemError::EnableTimeout)
     }
 
     pub(crate) fn is_acpi_enabled(&mut self) -> Result<bool, AcpiSystemError> {

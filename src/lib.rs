@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+use core::time::Duration;
+
 use acpi::{
     fadt::{Fadt, Pm1Registers},
     AcpiHandler, AcpiTables, PhysicalMapping,
@@ -54,6 +56,8 @@ pub trait Handler: Clone {
     fn mem_write_u16(address: u64, value: u16);
     fn mem_write_u32(address: u64, value: u32);
     fn mem_write_u64(address: u64, value: u64);
+
+    fn stall(duration: Duration);
 
     unsafe fn flush_cpu_cache() {
         #[cfg(target_arch = "x86_64")]
