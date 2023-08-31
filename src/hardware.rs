@@ -35,6 +35,10 @@ impl AcpiBitRegister {
         parent: AcpiRegister::Pm1Control,
         position: 13,
     };
+    pub(crate) const WAKE_STATUS: Self = Self {
+        parent: AcpiRegister::Pm1Status,
+        position: 15,
+    };
 
     pub(crate) const fn new(parent: AcpiRegister, position: usize) -> Self {
         Self { parent, position }

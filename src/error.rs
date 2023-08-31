@@ -5,6 +5,10 @@ use aml::AmlError;
 pub enum AcpiSystemError {
     AcpiError(AcpiError),
     AmlError(AmlError),
+
+    InvalidSleepValues(u8, u8),
+    InvalidSleepMethod(&'static str),
+    MissingSleepMethod(&'static str),
 }
 
 impl From<AcpiError> for AcpiSystemError {

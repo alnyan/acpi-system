@@ -24,34 +24,34 @@ const PATH_SYSTEM_STATUS: &str = "\\_SI._SST";
 
 impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
     fn sleep_type_data(&self, state: AcpiSleepState) -> Result<(u8, u8), AcpiSystemError> {
-        if state as usize > SLEEP_STATE_NAMES.len() {
-            todo!();
-        }
-
         // Evaluate the \_Sx namespace object containing the register values
-        let path = AmlName::from_str(SLEEP_STATE_NAMES[state as usize]).unwrap();
-        let info = self.aml_context.namespace.get_by_path(&path).unwrap();
+        let name = SLEEP_STATE_NAMES[state as usize];
+        let path = AmlName::from_str(name).unwrap();
+        let info = self
+            .aml_context
+            .namespace
+            .get_by_path(&path)
+            .map_err(|err| match err {
+                AmlError::ValueDoesNotExist(_) => AcpiSystemError::MissingSleepMethod(name),
+                e => e.into(),
+            })?;
 
-        let AmlValue::Package(elements) = &info else {
-            // TODO make this an error
-            panic!(
-                "{} did not evaluate to Package AML type",
-                SLEEP_STATE_NAMES[state as usize]
-            );
+        let AmlValue::Package(elements) = info else {
+            return Err(AcpiSystemError::InvalidSleepMethod(name));
         };
 
         match elements.len() {
             0 => todo!(),
             1 => todo!(),
             _ => {
-                if elements[0].type_of() != AmlType::Integer
-                    || elements[1].type_of() != AmlType::Integer
-                {
-                    panic!("Sleep package does not contain integers");
-                }
-
-                let val_a = elements[0].as_integer(&self.aml_context).unwrap() as u8;
-                let val_b = elements[1].as_integer(&self.aml_context).unwrap() as u8;
+                let val_a = elements[0]
+                    .as_integer(&self.aml_context)
+                    .map_err(|_| AcpiSystemError::InvalidSleepMethod(name))?
+                    as u8;
+                let val_b = elements[1]
+                    .as_integer(&self.aml_context)
+                    .map_err(|_| AcpiSystemError::InvalidSleepMethod(name))?
+                    as u8;
 
                 Ok((val_a, val_b))
             }
@@ -105,13 +105,13 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
     ) -> Result<(), AcpiSystemError> {
         let sleep_type_reg = &AcpiBitRangeRegister::SLEEP_TYPE;
         let sleep_enable_reg = &AcpiBitRegister::SLEEP_ENABLE;
-        // let sleep_type_reg_info = &data::BITREG_INFO[data::BITREG_SLEEP_TYPE];
-        // let sleep_enable_reg_info = &data::BITREG_INFO[data::BITREG_SLEEP_ENABLE];
 
-        // TODO clear wake status
+        self.clear_fixed_events()?;
+
+        // Clear wake status
+        AcpiBitRegister::WAKE_STATUS.set(self, true)?;
         // TODO disable all GPEs
         // TODO enable all wakeup GPEs
-        // self.disable_fixed_events()?;
 
         // Get current pm1a control value
         let mut pm1_control = self.read_register(AcpiRegister::Pm1Control)?;
@@ -125,9 +125,8 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         // Write Pm1Control back with modified SLP_TYP and clear SLP_EN
         self.write_pm1_control(pm1a_control, pm1b_control)?;
 
-        // TODO move this somewhere so the crate can support different architectures
         unsafe {
-            core::arch::asm!("wbinvd; cli");
+            H::flush_cpu_cache();
         }
 
         // Now write Pm1Control again, this time with SLP_EN set
@@ -136,11 +135,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             sleep_enable_reg.set_raw(pm1b_control, true),
         )?;
 
-        loop {
-            unsafe {
-                core::arch::asm!("hlt");
-            }
-        }
+        H::halt()
     }
 
     pub(crate) unsafe fn dispatch_sleep_command(
@@ -149,7 +144,10 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         sleep_type_b: u8,
     ) -> Result<(), AcpiSystemError> {
         if sleep_type_a > 7 || sleep_type_b > 7 {
-            todo!();
+            return Err(AcpiSystemError::InvalidSleepValues(
+                sleep_type_a,
+                sleep_type_b,
+            ));
         }
 
         self.acpi_hw_legacy_sleep(sleep_type_a, sleep_type_b)?;

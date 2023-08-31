@@ -228,9 +228,10 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
                 && event.status_register.get_from_raw(fixed_sts)
             {
                 log::trace!("Got event: {:?}", event.name);
-                // Clear the event by writing 1 into its status bit
+
                 event.status_register.set(self, true).ok();
 
+                // Clear the event by writing 1 into its status bit
                 if let Some(handler) = &self.event_handlers[event.handler_id] {
                     self.handle_event_action(handler(self)).ok();
                 }
@@ -238,5 +239,20 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn clear_fixed_events(&mut self) -> Result<(), AcpiSystemError> {
+        log::trace!("Clear fixed events");
+        let value = self.read_register(AcpiRegister::Pm1Status)?;
+        let mut result = 0;
+
+        for &event in FixedEvent::LIST {
+            if event.status_register.get_from_raw(value) {
+                log::trace!("Clear event: {:?}", event.name);
+                result = event.status_register.set_raw(result, true);
+            }
+        }
+
+        self.write_register(AcpiRegister::Pm1Status, value)
     }
 }

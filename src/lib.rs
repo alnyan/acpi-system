@@ -49,6 +49,35 @@ pub trait Handler: Clone {
     fn mem_read_u16(address: u64) -> u16;
     fn mem_read_u32(address: u64) -> u32;
     fn mem_read_u64(address: u64) -> u64;
+
+    fn mem_write_u8(address: u64, value: u8);
+    fn mem_write_u16(address: u64, value: u16);
+    fn mem_write_u32(address: u64, value: u32);
+    fn mem_write_u64(address: u64, value: u64);
+
+    unsafe fn flush_cpu_cache() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            core::arch::asm!("wbinvd");
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            compile_error!("Unimplemented")
+        }
+    }
+
+    unsafe fn halt() -> ! {
+        #[cfg(target_arch = "x86_64")]
+        {
+            loop {
+                core::arch::asm!("cli; hlt");
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            compile_error!("Unimplemented")
+        }
+    }
 }
 
 pub struct AcpiSystem<'a, H: Handler + AcpiHandler + 'a> {
