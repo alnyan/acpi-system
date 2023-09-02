@@ -142,6 +142,19 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
                 .unwrap();
         }
 
+        for (i, ssdt) in self.tables.ssdts().enumerate() {
+            log::info!("Load SSDT{}", i);
+            let ssdt = unsafe { H::map_slice(ssdt.address as _, ssdt.length as _) };
+
+            self.aml_context
+                .parse_table(ssdt)
+                .map_err(|e| {
+                    log::error!("Could not initialize SSDT{}: {:?}", i, e);
+                    e
+                })
+                .unwrap()
+        }
+
         self.initialize_events()?;
 
         self.aml_context.initialize_objects()?;

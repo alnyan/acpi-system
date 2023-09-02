@@ -39,6 +39,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
         let AmlValue::Package(elements) = info else {
             return Err(AcpiSystemError::InvalidSleepMethod(name));
         };
+        let elements = elements.lock();
 
         match elements.len() {
             0 => todo!(),
