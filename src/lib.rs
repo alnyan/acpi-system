@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use core::time::Duration;
+use core::{ops::Deref, time::Duration};
 
 use acpi::{
     fadt::{Fadt, Pm1Registers},
@@ -34,10 +34,12 @@ pub enum AcpiInterruptMethod {
 }
 
 // TODO maybe merge this with aml handler?
-pub trait Handler: Clone {
+pub trait Handler: Clone + AcpiHandler {
+    type MappedSlice: Deref<Target = [u8]>;
+
     fn install_interrupt_handler(irq: u32) -> Result<(), AcpiSystemError>;
 
-    unsafe fn map_slice(address: u64, length: u64) -> &'static [u8];
+    unsafe fn map_slice(address: u64, length: u64) -> Self::MappedSlice;
 
     fn io_read_u8(port: u16) -> u8;
     fn io_read_u16(port: u16) -> u16;
@@ -84,7 +86,7 @@ pub trait Handler: Clone {
     }
 }
 
-pub struct AcpiSystem<'a, H: Handler + AcpiHandler + 'a> {
+pub struct AcpiSystem<'a, H: Handler + 'a> {
     tables: &'a AcpiTables<H>,
     aml_context: AmlContext,
 
@@ -99,7 +101,7 @@ pub struct AcpiSystem<'a, H: Handler + AcpiHandler + 'a> {
     event_handlers: EnumMap<EventHandlerId, Option<Box<dyn Fn(&Self) -> EventAction>>>,
 }
 
-impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
+impl<'a, H: Handler + 'a> AcpiSystem<'a, H> {
     pub fn new(
         tables: &'a AcpiTables<H>,
         aml_handler: Box<dyn aml::Handler>,
@@ -134,7 +136,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             let dsdt = unsafe { H::map_slice(dsdt.address as _, dsdt.length as _) };
 
             self.aml_context
-                .parse_table(dsdt)
+                .parse_table(dsdt.deref())
                 .map_err(|e| {
                     log::error!("Could not initialize DSDT: {:?}", e);
                     e
@@ -147,7 +149,7 @@ impl<'a, H: Handler + AcpiHandler + 'a> AcpiSystem<'a, H> {
             let ssdt = unsafe { H::map_slice(ssdt.address as _, ssdt.length as _) };
 
             self.aml_context
-                .parse_table(ssdt)
+                .parse_table(ssdt.deref())
                 .map_err(|e| {
                     log::error!("Could not initialize SSDT{}: {:?}", i, e);
                     e
