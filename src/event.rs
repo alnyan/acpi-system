@@ -58,7 +58,7 @@ pub enum EventAction {
 }
 
 impl FixedEvent {
-    const LIST: &[&'static Self] = &[
+    const LIST: &'static [&'static Self] = &[
         &Self::TIMER,
         &Self::GLOBAL_LOCK,
         &Self::POWER_BUTTON,
