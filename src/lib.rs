@@ -10,7 +10,7 @@ use acpi::{
     AcpiHandler, AcpiTables, PhysicalMapping,
 };
 use alloc::{boxed::Box, vec};
-use aml::{AmlContext, AmlError, AmlName, AmlValue};
+use aml::{pci_routing::PciRoutingTable, AmlContext, AmlError, AmlName, AmlValue};
 use enum_map::EnumMap;
 
 use event::{EventHandlerId, GpeBlock};
@@ -23,6 +23,12 @@ mod sleep;
 pub use error::AcpiSystemError;
 pub use event::{EventAction, FixedEvent};
 pub use sleep::AcpiSleepState;
+
+// Re-export other ACPI types
+pub use aml::{
+    pci_routing::{IrqDescriptor, PciRoute, PciRouteType, Pin as PciPin},
+    resource::{InterruptPolarity, InterruptTrigger},
+};
 
 const PATH_PIC: &str = "\\_PIC";
 
@@ -185,6 +191,19 @@ impl<'a, H: Handler + 'a> AcpiSystem<'a, H> {
         log::info!("Enable ACPI event: {}", event.name);
         self.event_handlers[event.handler_id].replace(handler);
         event.enable_register.set(self, true)
+    }
+
+    // TODO simplify OS's life by giving an iterator over the PCI root bridges
+    pub fn pci_route(
+        &mut self,
+        aml_path: &str,
+        device: u16,
+        function: u16,
+        pin: aml::pci_routing::Pin,
+    ) -> Result<IrqDescriptor, AmlError> {
+        let path = AmlName::from_str(aml_path)?;
+        let table = PciRoutingTable::from_prt_path(&path, &mut self.aml_context)?;
+        table.route(device, function, pin, &mut self.aml_context)
     }
 
     pub fn handle_sci(&mut self) {
