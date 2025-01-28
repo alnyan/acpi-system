@@ -199,11 +199,16 @@ impl<'a, H: Handler + 'a> AcpiSystem<'a, H> {
         aml_path: &str,
         device: u16,
         function: u16,
-        pin: aml::pci_routing::Pin,
+        pin: PciPin,
     ) -> Result<IrqDescriptor, AmlError> {
         let path = AmlName::from_str(aml_path)?;
-        let table = PciRoutingTable::from_prt_path(&path, &mut self.aml_context)?;
-        table.route(device, function, pin, &mut self.aml_context)
+        let table = PciRoutingTable::from_prt_path(&path, &mut self.aml_context)
+            .inspect_err(|error| log::warn!("pci_route({aml_path}) -> {error:?}"))?;
+        table
+            .route(device, function, pin, &mut self.aml_context)
+            .inspect_err(|error| {
+                log::warn!("pci_route({aml_path}, {device}, {function}) -> {error:?}");
+            })
     }
 
     pub fn handle_sci(&mut self) {
